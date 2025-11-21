@@ -2486,24 +2486,46 @@ class MeshService : Service() {
             override fun requestPosition(destNum: Int, position: Position) = toRemoteExceptions {
                 if (destNum != myNodeNum) {
                     val provideLocation = meshPrefs.shouldProvideNodeLocation(myNodeNum)
+                    val channel = nodeDBbyNodeNum[destNum]?.channel ?: 0
+                    val precision = this@MeshService.channelSet.settingsList[channel].moduleSettings.positionPrecision
+
                     val currentPosition =
                         when {
                             provideLocation && position.isValid() -> position
-                            else -> nodeDBbyNodeNum[myNodeNum]?.position?.let { Position(it) }?.takeIf { it.isValid() }
+                            else -> nodeDBbyNodeNum[myNodeNum]?.position?.let { Position(it) }
+                                ?.takeIf { it.isValid() }
                         }
                     if (currentPosition == null) {
                         Timber.d("Position request skipped - no valid position available")
                         return@toRemoteExceptions
                     }
+
+                    var latitude = Position.degI(currentPosition.latitude)
+                    var longitude = Position.degI(currentPosition.longitude)
+
+                    // Precision offset replicated from meshtastic firmware
+                    if (precision < 32 && precision > 0) {
+                        val mask = -1 shl (32 - precision)
+                        latitude = latitude and mask
+                        longitude = longitude and mask
+
+                        // We want the imprecise position to be the middle of the possible location, not
+                        val offset = 1 shl (31 - precision)
+                        latitude += offset
+                        longitude += offset
+                    }
+
                     val meshPosition = position {
-                        latitudeI = Position.degI(currentPosition.latitude)
-                        longitudeI = Position.degI(currentPosition.longitude)
+                        latitudeI = latitude
+                        longitudeI = longitude
                         altitude = currentPosition.altitude
                         time = currentSecond()
+                        precisionBits = precision
                     }
+
                     packetHandler.sendToRadio(
                         newMeshPacketTo(destNum).buildMeshPacket(
-                            channel = nodeDBbyNodeNum[destNum]?.channel ?: 0,
+                            channel = channel,
                             priority = MeshPacket.Priority.BACKGROUND,
                         ) {
                             portnumValue = Portnums.PortNum.POSITION_APP_VALUE
