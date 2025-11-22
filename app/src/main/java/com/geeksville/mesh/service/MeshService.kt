@@ -233,6 +233,7 @@ class MeshService : Service() {
         private const val DEFAULT_HISTORY_RETURN_WINDOW_MINUTES = 60 * 24
         private const val DEFAULT_HISTORY_RETURN_MAX_MESSAGES = 100
         private const val MAX_EARLY_PACKET_BUFFER = 128
+        private const val PRECISE_POSITION_BITS = 32
 
         @VisibleForTesting
         internal fun buildStoreForwardHistoryRequest(
@@ -2504,13 +2505,13 @@ class MeshService : Service() {
                     var longitude = Position.degI(currentPosition.longitude)
 
                     // Precision offset replicated from meshtastic firmware
-                    if (precision < 32 && precision > 0) {
-                        val mask = -1 shl (32 - precision)
+                    if (precision < PRECISE_POSITION_BITS && precision > 0) {
+                        val mask = -1 shl (PRECISE_POSITION_BITS - precision)
                         latitude = latitude and mask
                         longitude = longitude and mask
 
                         // We want the imprecise position to be the middle of the possible location, not
-                        val offset = 1 shl (31 - precision)
+                        val offset = 1 shl (PRECISE_POSITION_BITS - 1 - precision)
                         latitude += offset
                         longitude += offset
                     }
