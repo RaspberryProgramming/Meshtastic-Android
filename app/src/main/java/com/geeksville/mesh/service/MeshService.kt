@@ -2490,38 +2490,44 @@ class MeshService : Service() {
                     val channel = nodeDBbyNodeNum[destNum]?.channel ?: 0
                     val precision = this@MeshService.channelSet.settingsList[channel].moduleSettings.positionPrecision
 
-                    val currentPosition =
-                        when {
-                            provideLocation && position.isValid() -> position
-                            else -> nodeDBbyNodeNum[myNodeNum]?.position?.let { Position(it) }
-                                ?.takeIf { it.isValid() }
+                    // default meshPosition to empty in case precision is 0 and this channel is not supposed to
+                    // broadcast positions
+                    var meshPosition = position {}
+
+                    if (precision > 0) {
+                        val currentPosition =
+                            when {
+                                provideLocation && position.isValid() -> position
+                                else ->
+                                    nodeDBbyNodeNum[myNodeNum]?.position?.let { Position(it) }?.takeIf { it.isValid() }
+                            }
+                        if (currentPosition == null) {
+                            Timber.d("Position request skipped - no valid position available")
+                            return@toRemoteExceptions
                         }
-                    if (currentPosition == null) {
-                        Timber.d("Position request skipped - no valid position available")
-                        return@toRemoteExceptions
-                    }
 
-                    var latitude = Position.degI(currentPosition.latitude)
-                    var longitude = Position.degI(currentPosition.longitude)
+                        var latitude = Position.degI(currentPosition.latitude)
+                        var longitude = Position.degI(currentPosition.longitude)
 
-                    // Precision offset replicated from meshtastic firmware
-                    if (precision < PRECISE_POSITION_BITS && precision > 0) {
-                        val mask = -1 shl (PRECISE_POSITION_BITS - precision)
-                        latitude = latitude and mask
-                        longitude = longitude and mask
+                        // Precision offset replicated from meshtastic firmware
+                        if (precision < PRECISE_POSITION_BITS && precision > 0) {
+                            val mask = -1 shl (PRECISE_POSITION_BITS - precision)
+                            latitude = latitude and mask
+                            longitude = longitude and mask
 
-                        // We want the imprecise position to be the middle of the possible location, not
-                        val offset = 1 shl (PRECISE_POSITION_BITS - 1 - precision)
-                        latitude += offset
-                        longitude += offset
-                    }
+                            // We want the imprecise position to be the middle of the possible location, not
+                            val offset = 1 shl (PRECISE_POSITION_BITS - 1 - precision)
+                            latitude += offset
+                            longitude += offset
+                        }
 
-                    val meshPosition = position {
-                        latitudeI = latitude
-                        longitudeI = longitude
-                        altitude = currentPosition.altitude
-                        time = currentSecond()
-                        precisionBits = precision
+                        meshPosition = position {
+                            latitudeI = latitude
+                            longitudeI = longitude
+                            altitude = currentPosition.altitude
+                            time = currentSecond()
+                            precisionBits = precision
+                        }
                     }
 
                     packetHandler.sendToRadio(
